@@ -1,16 +1,22 @@
 # Agent Commander — releases
 
 Download site for the **Agent Commander server** — the `agentcmd` binary that
-runs on your own computer, drives the Claude Code CLI inside your project
-folders, and talks to the Agent Commander mobile app over a TLS certificate the
-app pins at pairing time.
+runs on your own computer, drives coding agents inside your project folders,
+and talks to the Agent Commander mobile app over a TLS certificate the app pins
+at pairing time.
+
+The server drives three providers through their own CLIs: **Claude Code**
+(`claude`), **Codex** (`codex`) and, experimentally, **Antigravity** (`agy`).
+From your phone you start and follow agent turns live, answer their questions,
+and approve permissions and plans; an agent can also hand work to subagents
+running on a different provider.
 
 This repository holds **release artifacts only** — no source code. Every
 release is built and published by hand, one tag at a time.
 
-- Product site — <https://agentcmd.sframework.com>
-- Install guide, in English and Vietnamese — <https://agentcmd.sframework.com/support>
-- Every build ever published — [Releases](../../releases)
+- Product site — <https://agentcmd.app>
+- Install guide, in English and Vietnamese — <https://agentcmd.app/support>
+- Every published build — [Releases](../../releases)
 
 ---
 
@@ -38,14 +44,21 @@ back** if the new one does not come up within 30 seconds.
 
 ## Before you install
 
-- **The Claude Code CLI, installed and signed in.** The server does not talk to
-  Anthropic directly — it runs your CLI. Without it the installer stops *before
-  downloading anything* and prints how to get it.
-  On Windows this must be the **native `claude.exe`** (`irm https://claude.ai/install.ps1 | iex`);
-  the npm `claude.cmd` shim will not work, because the server starts the CLI
-  directly rather than through a shell.
-- **Windows: Git for Windows** (`winget install Git.Git`). The CLI's Bash tool
-  needs it. The installer only warns if it is missing.
+- **At least one provider CLI, installed and signed in** — the Claude Code CLI
+  (`claude`) or the Codex CLI (`codex`); having both gives you both providers.
+  The server does not talk to Anthropic or OpenAI directly — it runs your CLI,
+  on your own subscription. With neither CLI present, a fresh install stops
+  *before downloading anything* and prints how to get one. A missing CLI for one
+  provider never breaks the other.
+  On Windows the Claude CLI must be the **native `claude.exe`**
+  (`irm https://claude.ai/install.ps1 | iex`); the npm `claude.cmd` shim will
+  not work, because the server starts the CLI directly rather than through a
+  shell.
+- **Antigravity is optional and experimental.** Install and sign in to the
+  `agy` CLI yourself if you want it; without it the other providers work as
+  usual.
+- **Windows: Git for Windows** (`winget install Git.Git`). The Claude CLI's Bash
+  tool needs it. The installer only warns if it is missing.
 - **Nothing else at runtime.** No Node, no database server, no process manager.
   The server is one binary and one SQLite file.
 
@@ -54,23 +67,25 @@ back** if the new one does not come up within 30 seconds.
 | Target | Package | Companion desktop app |
 |---|---|---|
 | `darwin_arm64` | `agentcmd-<version>-darwin_arm64.tar.gz` | menu bar app (macOS 13+) |
-| `darwin_amd64` | `agentcmd-<version>-darwin_amd64.tar.gz` | menu bar app (macOS 13+) |
+| `darwin_amd64` | `agentcmd-<version>-darwin_amd64.tar.gz` | menu bar app (macOS 13+), when the release was built on an Intel Mac |
 | `linux_amd64` | `agentcmd-<version>-linux_amd64.tar.gz` | none — use the CLI |
 | `linux_arm64` | `agentcmd-<version>-linux_arm64.tar.gz` | none — use the CLI |
 | `windows_amd64` | `agentcmd-<version>-windows_amd64.zip` | system tray app |
 
 A target is only present in a release if that release was built for it; the
 `packages` object in `manifest.json` is the authoritative list, and the
-installer says so plainly rather than failing when a target is absent. The same
-goes for the companion apps: each is built only on the operating system and
-architecture it runs on, so a given release carries the one its build machine
-could produce. The `menubar` field of each entry in `manifest.json` tells you
-whether that particular package has one.
+installer says so plainly rather than failing when a target is absent. The
+macOS menu bar app is built only for the architecture of the Mac that builds
+the release, so the other darwin package ships without it. The `menubar` field
+of each entry in `manifest.json` tells you whether that particular package
+carries its companion app.
 
 Notes on the edges:
 
 - **WSL** is served by the Linux packages. Enable systemd in `/etc/wsl.conf`
   before installing, or the background service cannot be installed.
+- **Older Linux** such as CentOS 7 (glibc 2.17) is supported. Delegation to
+  subagents needs git 2.17 or newer; `agentcmd doctor` warns when git is older.
 - **Windows on ARM** is not built. The installer will install the x64 package
   and warn you that it runs under emulation.
 - **Alpine and other musl systems** are refused: the embedded sidecar is built
@@ -87,9 +102,10 @@ Notes on the edges:
 4. Installs the companion desktop app if the package carries one.
 5. Hands over to `agentcmd setup`, which creates the data directory and a
    migrated database, generates the TLS key and certificate the app will pin,
-   writes an environment file only you can read, installs and starts the
-   background service, and finishes by printing a **pairing QR code** valid for
-   ten minutes.
+   writes an environment file only you can read with every provider turned on
+   (a provider whose CLI is missing simply stays unavailable), installs and
+   starts the background service, and finishes by printing a **pairing QR
+   code** valid for ten minutes.
 
 All installation logic lives in `setup`, inside the binary. The scripts only do
 the four things that must happen before a binary exists: download, verify,
@@ -100,11 +116,11 @@ place, unquarantine.
 | | macOS, Linux, WSL | Windows |
 |---|---|---|
 | Binary | `~/.local/bin/agentcmd` | `%LOCALAPPDATA%\Programs\agentcmd\agentcmd.exe` |
-| Companion app | `~/Applications/Agent Commander.app` | `%LOCALAPPDATA%\Programs\agentcmd\Agent Commander.exe` |
+| Companion app | `~/Applications/Agent Commander.app` (or wherever it already is) | `%LOCALAPPDATA%\Programs\agentcmd\Agent Commander.exe` |
 | Data directory | `~/agentcmd-engine` | `%USERPROFILE%\agentcmd-engine` |
 | Configuration | `~/.config/agentcmd/.env` | `%APPDATA%\agentcmd\.env` |
 | Service logs | `~/agentcmd-engine/logs/service.{out,err}.log` | `%USERPROFILE%\agentcmd-engine\logs\service.{out,err}.log` |
-| Background service | launchd agent, or systemd `--user` | Task Scheduler task `org.thopd.agentcmd` |
+| Background service | launchd agent; on Linux systemd `--user` (or `--system` / `--cron`) | Task Scheduler task `org.thopd.agentcmd` |
 
 The data directory must be on a local disk. Setup refuses OneDrive folders,
 network drives, UNC paths and `\\wsl$`, because SQLite cannot lock files there.
@@ -115,18 +131,18 @@ network drives, UNC paths and `\\wsl$`, because SQLite cannot lock files there.
 variables set before the pipe:
 
 ```powershell
-$env:AC_INSTALL_VERSION = 'v1.2.0'   # pin a version
+$env:AC_INSTALL_VERSION = 'v1.3.0'   # pin a version
 $env:AC_INSTALL_PREFIX  = 'D:\apps\agentcmd'
 $env:AC_INSTALL_NO_TRAY = '1'        # skip the tray app
 $env:AC_INSTALL_NO_SETUP = '1'       # place the binary only
 irm https://github.com/phidinhtho/agentcmd-release/releases/latest/download/install.ps1 | iex
 ```
 
-On macOS and Linux the same options are flags after `bash -s --`, and the
-environment variables work too:
+On macOS and Linux the same options are flags after `bash -s --`;
+`AC_INSTALL_VERSION` and `AC_INSTALL_PREFIX` work as environment variables too:
 
 ```bash
-curl -fsSL …/install.sh | bash -s -- v1.2.0          # pin a version
+curl -fsSL …/install.sh | bash -s -- v1.3.0          # pin a version
 curl -fsSL …/install.sh | bash -s -- --prefix ~/bin
 curl -fsSL …/install.sh | bash -s -- --no-setup      # place the binary only
 curl -fsSL …/install.sh | bash -s -- --no-menubar
@@ -171,7 +187,8 @@ agentcmd update             # download, verify, swap, restart — roll back if i
 `update` is the only command in the binary that reaches the network besides the
 push relay, and it only runs when you ask for it. It hands the actual swap to
 the `install.sh` / `install.ps1` inside the downloaded package, so there is one
-implementation of "replace the binary", not two.
+implementation of "replace the binary", not two. The companion apps check for a
+new release on their own and offer the upgrade from their menu.
 
 Your database, keys, environment file and already-paired devices are untouched
 by an upgrade.
@@ -213,15 +230,15 @@ your terminal — so it cannot happen in a script with nobody watching.
 - **Nothing is code-signed yet.** The installer clears the Mark-of-the-Web from
   what it unpacks, so going through the script is smooth; if you download a zip
   and open it by hand, expect SmartScreen to call it an unknown publisher.
-- **The first run can be slow.** Defender scans the ~84 MB sidecar the moment it
-  is unpacked. Subsequent starts are fast.
+- **The first run can be slow.** Defender scans the embedded sidecar the moment
+  it is unpacked. Subsequent starts are fast.
 - **One user per machine.** The task name is machine-global, so a second user
   account on the same machine cannot install its own service.
 
 ## After installing
 
 ```
-agentcmd doctor      # re-checks everything and tells you how to fix what is wrong
+agentcmd doctor      # re-checks everything, every provider included, and tells you how to fix what is wrong
 agentcmd status      # service, engine, cost, paired devices, disk
 agentcmd auth show   # a fresh pairing QR code, valid for ten minutes
 ```
@@ -266,7 +283,7 @@ beyond GitHub's own download numbers. They never touch your pairing code — onl
 
 ## Support
 
-Questions and bug reports: <https://agentcmd.sframework.com/support>.
+Questions and bug reports: <https://agentcmd.app/support>.
 
 Please do not include your server address, your pairing code, or conversation
 content in a report.
